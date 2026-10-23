@@ -1,0 +1,24 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: raven-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: raven
+    ports:
+      - "5432:5432"
+    volumes:
+      - raven_pgdata:/var/lib/postgresql/data
+      # Flyway 风格一键自动初始化挂载：首次启动时自动执行 SQL 迁移脚本
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d raven"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  raven_pgdata:
+    name: raven_pgdata

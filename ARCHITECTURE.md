@@ -155,10 +155,30 @@ python scripts/my_custom_script.py --since 24h
     ],
     "is_exploited": true,
     "source": "github_pocs",
-    "published_at": "2024-06-07T00:00:00Z"
+    "published_at": "2024-06-07T00:00:00Z",
+    "raw_data": {
+      "stars": 128
+    }
   }
 ]
 ```
+
+### 5.3 字段约束与契约定义
+契约 JSON Schema 校验文件位于：[contracts/scraper-schema.json](file:///Users/peigen/Documents/dev/0xHardfork/raven/specs/001-threat-collector/contracts/scraper-schema.json)
+
+| 字段名 | 类型 | 必填 | 说明与示例 |
+| :--- | :--- | :---: | :--- |
+| `cve_id` | `string` | **是** | 大写标准 CVE 格式，如 `"CVE-2024-4577"`（系统聚合主键） |
+| `title` | `string` | **是** | 漏洞标题或利用简述 |
+| `description` | `string` | 否 | 漏洞详细描述（无则填 `""`） |
+| `severity` | `string` | 否 | 评级：`"CRITICAL"`, `"HIGH"`, `"MEDIUM"`, `"LOW"`, `"UNKNOWN"` |
+| `cvss_score` | `float` | 否 | `0.0 ~ 10.0` 浮点数，无评分时可为 `null` |
+| `categories` | `string[]`| **是** | **自声明生态分类**，如 `["java", "spring"]`、`["golang"]`、`["php"]` |
+| `is_exploited` | `bool` | 否 | 是否在野被利用（CISA KEV 源填 `true`，其他源默认 `false`） |
+| `pocs` | `object[]`| 否 | PoC 列表，每项含 `url` (必填), `author`, `description`, `published_at` |
+| `source` | `string` | **是** | 采集源标识，如 `"github_pocs"`, `"cisa_kev"`, `"exploit_db"`, `"nvd"` |
+| `published_at` | `string` | 否 | ISO8601 时间戳，如 `"2024-06-07T00:00:00Z"` |
+| `raw_data` | `object` | 否 | 原始扩展键值对字典（用于审计追溯） |
 
 > **分类规则遵循用户要求**：纯脚本自声明分类。脚本输出中的 `categories` 字段（如 `["java", "spring"]` 或 `["php"]`）由 Go 核心原样入库索引，不作二次强制修改。
 
@@ -196,27 +216,42 @@ CREATE INDEX idx_vuln_exploited ON vulnerabilities(is_exploited);
 1. **分类合并**：`categories = array_cat_unique(old.categories, new.categories)`
 2. **PoC 追加**：按 PoC URL 去重后追加至 `pocs` 数组。
 3. **评级覆盖**：若新记录存在更准确的 CVSS/Severity 则更新。
-4. **状态提升**：若有任一源确认在野利用（`is_exploited=true`），主记录置为 `true`。
+### 6.3 数据库版本化迁移与一键初始化 (Flyway 风格)
+借鉴 Java 生态 **Flyway** 的设计思想，Raven 采用标准版本化迁移（Versioned Migrations）管理数据库生命周期：
+1. **版本化 SQL 脚本目录 (`migrations/`)**：
+   - 命名规范：`000001_init_vulnerabilities.up.sql`（创建表与索引）、`000001_init_vulnerabilities.down.sql`（回滚）。
+   - 内嵌至二进制：使用 Go `embed.FS` 将 SQL 文件编译进二进制，实现单文件独立运行无外部文件依赖。
+2. **迁移版本记录表 (`schema_migrations`)**：
+   - 对应 Flyway 的 `flyway_schema_history`，自动记录当前应用的 migration version、脏状态（dirty flag）与执行耗时。
+3. **开发环境与部署初始化方案**：
+   - **方式 A（CLI 一键迁移）**：`raven migrate up` 执行未完成的迁移，`raven migrate status` 查看迁移状态。
+   - **方式 B（Docker 一键挂载）**：`docker-compose.yaml` 将 `migrations/` 映射到 `/docker-entrypoint-initdb.d`，本地 `docker compose up` 启动 Postgres 时自动完成建表。
+   - **方式 C（启动自检）**：服务启动时支持自动执行轻量级迁移校验。
 
 ---
 
 ## 7. CLI 命令设计
 
 ```bash
-# 1. 执行一键采集 (支持全源或指定源/脚本/分类)
+# 1. 数据库版本迁移与初始化 (Flyway 式一键初始化)
+raven migrate up          # 应用所有待执行的 SQL 迁移
+raven migrate status      # 查看当前数据库版本与迁移记录
+raven migrate down 1      # 回滚上一个版本 (开发调试用)
+
+# 2. 执行一键采集 (支持全源或指定源/脚本/分类)
 raven collect
 raven collect --source github
 raven collect --script scripts/github_pocs.py --category java
 
-# 2. 终端情报检索与多维筛选
+# 3. 终端情报检索与多维筛选
 raven query --cve CVE-2024-4577
 raven query --category java --has-poc --severity CRITICAL
 raven query --keyword "Spring Cloud" --output table    # 支持 table / json / markdown
 
-# 3. 定时轮询守护模式
+# 4. 定时轮询守护模式
 raven watch --interval 15m --category java,golang
 
-# 4. 启动 Web API 服务
+# 5. 启动 Web API 服务
 raven server --port 8080 --host 0.0.0.0
 ```
 
