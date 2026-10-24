@@ -48,11 +48,13 @@ var watchCmd = &cobra.Command{
 					categories = append(categories, t)
 				}
 			}
-		} else {
+		} else if len(cfg.Watcher.Categories) > 0 {
 			categories = cfg.Watcher.Categories
+		} else if len(cfg.Notifier.AllTargetCategories()) > 0 {
+			categories = cfg.Notifier.AllTargetCategories()
 		}
 
-		runner := python.NewRunner(cfg.Python)
+		runner := python.NewRunner(cfg.Python, cfg.Scrapers)
 
 		var repo port.RepositoryPort
 		db, err := sql.Open("postgres", cfg.Database.DSN())

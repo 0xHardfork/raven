@@ -17,14 +17,26 @@ import (
 
 type Notifier struct {
 	cfg        config.SlackConfig
+	endpoint   config.SlackEndpointConfig
 	dryRun     bool
 	httpClient *http.Client
 }
 
-func NewNotifier(cfg config.SlackConfig, dryRun bool) *Notifier {
+func NewNotifier(cfg config.SlackConfig, dryRun bool, endpoints ...config.SlackEndpointConfig) *Notifier {
+	var ep config.SlackEndpointConfig
+	if len(endpoints) > 0 {
+		ep = endpoints[0]
+	} else {
+		ep = config.SlackEndpointConfig{
+			Name:             "slack-default",
+			WebhookURL:       cfg.WebhookURL,
+			FilterCategories: cfg.FilterCategories,
+		}
+	}
 	return &Notifier{
-		cfg:    cfg,
-		dryRun: dryRun,
+		cfg:        cfg,
+		endpoint:   ep,
+		dryRun:     dryRun,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -32,9 +44,26 @@ func NewNotifier(cfg config.SlackConfig, dryRun bool) *Notifier {
 }
 
 func (n *Notifier) SendThreatAlert(ctx context.Context, vuln *domain.Vulnerability) error {
-	payload := n.buildBlockKitPayload(vuln)
+	if len(n.endpoint.FilterCategories) > 0 {
+		if !domain.MatchAnyCategoryRule(n.endpoint.FilterCategories, vuln.Categories) {
+			return nil
+		}
+	}
 
-	if n.dryRun || n.cfg.WebhookURL == "" {
+	if n.endpoint.MinSeverity != "" {
+		minWeight := domain.NormalizeSeverity(n.endpoint.MinSeverity).Weight()
+		if vuln.Severity.Weight() < minWeight {
+			return nil
+		}
+	}
+
+	payload := n.buildBlockKitPayload(vuln)
+	targetURL := n.endpoint.WebhookURL
+	if targetURL == "" {
+		targetURL = n.cfg.WebhookURL
+	}
+
+	if n.dryRun || targetURL == "" {
 		n.renderTerminalPreview(vuln)
 		return nil
 	}
@@ -44,7 +73,7 @@ func (n *Notifier) SendThreatAlert(ctx context.Context, vuln *domain.Vulnerabili
 		return fmt.Errorf("marshal slack payload failed: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, n.cfg.WebhookURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create slack request failed: %w", err)
 	}
@@ -60,7 +89,7 @@ func (n *Notifier) SendThreatAlert(ctx context.Context, vuln *domain.Vulnerabili
 		return fmt.Errorf("slack webhook returned non-2xx status: %d", resp.StatusCode)
 	}
 
-	logger.L().Info("slack threat alert delivered", "cve", vuln.CveID)
+	logger.L().Info("slack threat alert delivered", "cve", vuln.CveID, "endpoint", n.endpoint.Name)
 	return nil
 }
 
@@ -73,15 +102,42 @@ func (n *Notifier) SendBatchAlert(ctx context.Context, vulns []*domain.Vulnerabi
 	return nil
 }
 
+const defaultSlackTemplate = `*{{severity_emoji}} [{{severity}}] <{{nvd_url}}|{{cve_id}}>* — *{{title}}*
+> {{description}}
+
+• *Severity:* *{{severity}}* (CVSS: {{cvss}})
+• *In-The-Wild:* {{in_the_wild}}
+• *Categories:* {{categories}}
+• *CVE Links:* <{{nvd_url}}|NVD> • <{{cve_org_url}}|CVE.org>
+
+*🔥 Available Exploits / PoCs:*
+{{pocs}}`
+
 func (n *Notifier) buildBlockKitPayload(v *domain.Vulnerability) map[string]any {
 	severityEmoji := "⚠️"
-	if v.Severity == domain.SeverityCritical {
+	color := "#E8912D"
+
+	switch v.Severity {
+	case domain.SeverityCritical:
 		severityEmoji = "🚨"
+		color = "#E01E5A"
+	case domain.SeverityHigh:
+		severityEmoji = "🔥"
+		color = "#ECB22E"
+	case domain.SeverityMedium:
+		severityEmoji = "⚡"
+		color = "#2EB886"
+	case domain.SeverityLow:
+		severityEmoji = "ℹ️"
+		color = "#4A154B"
+	default:
+		severityEmoji = "🔍"
+		color = "#808080"
 	}
 
 	exploitedStr := "No"
 	if v.IsExploited {
-		exploitedStr = "🔥 YES (Confirmed by CISA KEV)"
+		exploitedStr = "🚨 *YES (Confirmed Exploited in the Wild)*"
 	}
 
 	cvssStr := "N/A"
@@ -89,87 +145,97 @@ func (n *Notifier) buildBlockKitPayload(v *domain.Vulnerability) map[string]any 
 		cvssStr = fmt.Sprintf("%.1f", *v.CvssScore)
 	}
 
-	categoriesStr := strings.Join(v.Categories, ", ")
+	var catBadges []string
+	for _, c := range v.Categories {
+		catBadges = append(catBadges, fmt.Sprintf("*`%s`*", c))
+	}
+	categoriesStr := strings.Join(catBadges, " ")
 	if categoriesStr == "" {
-		categoriesStr = "General"
+		categoriesStr = "*`General`*"
 	}
 
 	sourcesStr := strings.Join(v.Sources, ", ")
-
-	blocks := []map[string]any{
-		{
-			"type": "header",
-			"text": map[string]any{
-				"type":  "plain_text",
-				"text":  fmt.Sprintf("%s [%s] %s", severityEmoji, v.Severity, v.CveID),
-				"emoji": true,
-			},
-		},
-		{
-			"type": "section",
-			"text": map[string]any{
-				"type": "mrkdwn",
-				"text": fmt.Sprintf("*Title:* %s\n%s", v.Title, v.Description),
-			},
-		},
-		{
-			"type": "section",
-			"fields": []map[string]any{
-				{
-					"type": "mrkdwn",
-					"text": fmt.Sprintf("*Severity:* `%s` (CVSS: %s)", v.Severity, cvssStr),
-				},
-				{
-					"type": "mrkdwn",
-					"text": fmt.Sprintf("*In-The-Wild:* %s", exploitedStr),
-				},
-				{
-					"type": "mrkdwn",
-					"text": fmt.Sprintf("*Ecosystem:* `%s`", categoriesStr),
-				},
-				{
-					"type": "mrkdwn",
-					"text": fmt.Sprintf("*Sources:* %s", sourcesStr),
-				},
-			},
-		},
+	if sourcesStr == "" {
+		sourcesStr = "Unknown"
 	}
 
-	if len(v.PoCs) > 0 {
-		var pocLines []string
-		for i, p := range v.PoCs {
-			if i >= 3 {
-				pocLines = append(pocLines, fmt.Sprintf("... (%d exploits total)", len(v.PoCs)))
-				break
-			}
-			author := p.Author
-			if author == "" {
-				author = "Community"
-			}
-			pocLines = append(pocLines, fmt.Sprintf("• <%s|%s> (by `%s`)", p.URL, p.URL, author))
+	nvdURL := fmt.Sprintf("https://nvd.nist.gov/vuln/detail/%s", v.CveID)
+	cveOrgURL := fmt.Sprintf("https://www.cve.org/CVERecord?id=%s", v.CveID)
+
+	desc := strings.TrimSpace(v.Description)
+	if len(desc) > 300 {
+		desc = desc[:297] + "..."
+	}
+	desc = strings.ReplaceAll(desc, "\n", " ")
+
+	var pocLines []string
+	for i, p := range v.PoCs {
+		if i >= 4 {
+			pocLines = append(pocLines, fmt.Sprintf("_...and %d more exploits available_", len(v.PoCs)-4))
+			break
 		}
 
-		blocks = append(blocks, map[string]any{
-			"type": "section",
-			"text": map[string]any{
-				"type": "mrkdwn",
-				"text": fmt.Sprintf("*Available Exploits / PoCs:*\n%s", strings.Join(pocLines, "\n")),
-			},
-		})
+		label := p.URL
+		if strings.Contains(p.URL, "github.com/") {
+			parts := strings.Split(p.URL, "github.com/")
+			if len(parts) > 1 && parts[1] != "" {
+				label = parts[1]
+			}
+		} else if strings.Contains(p.URL, "exploit-db.com/exploits/") {
+			parts := strings.Split(p.URL, "exploit-db.com/exploits/")
+			if len(parts) > 1 && parts[1] != "" {
+				label = "Exploit-DB #" + parts[1]
+			}
+		}
+
+		line := fmt.Sprintf("• <%s|*%s*>", p.URL, label)
+		if p.Author != "" {
+			line += fmt.Sprintf(" (by `%s`)", p.Author)
+		}
+		pocLines = append(pocLines, line)
 	}
 
-	blocks = append(blocks, map[string]any{
-		"type": "context",
-		"elements": []map[string]any{
-			{
-				"type": "mrkdwn",
-				"text": fmt.Sprintf("Raven Threat Intelligence Alert • %s", time.Now().Format("2006-01-02 15:04:05 UTC")),
-			},
-		},
-	})
+	pocsText := strings.Join(pocLines, "\n")
+	if pocsText == "" {
+		pocsText = "_No public PoC released yet._"
+	}
+
+	replacements := map[string]string{
+		"{{cve_id}}":         v.CveID,
+		"{{title}}":          v.Title,
+		"{{description}}":    desc,
+		"{{severity}}":       string(v.Severity),
+		"{{severity_emoji}}": severityEmoji,
+		"{{color}}":          color,
+		"{{cvss}}":           cvssStr,
+		"{{in_the_wild}}":    exploitedStr,
+		"{{categories}}":     categoriesStr,
+		"{{sources}}":        sourcesStr,
+		"{{nvd_url}}":        nvdURL,
+		"{{cve_org_url}}":    cveOrgURL,
+		"{{pocs}}":           pocsText,
+		"{{time_utc}}":       time.Now().UTC().Format("2006-01-02 15:04:05 UTC"),
+	}
+
+	tmpl := n.cfg.Template
+	if strings.TrimSpace(tmpl) == "" {
+		tmpl = defaultSlackTemplate
+	}
+
+	rendered := tmpl
+	for k, val := range replacements {
+		rendered = strings.ReplaceAll(rendered, k, val)
+	}
 
 	return map[string]any{
-		"blocks": blocks,
+		"attachments": []map[string]any{
+			{
+				"color":     color,
+				"text":      strings.TrimSpace(rendered),
+				"mrkdwn_in": []string{"text"},
+				"footer":    fmt.Sprintf("Raven Threat Intelligence • Sources: %s • %s", sourcesStr, time.Now().UTC().Format("2006-01-02 15:04:05 UTC")),
+			},
+		},
 	}
 }
 
@@ -183,8 +249,14 @@ func (n *Notifier) renderTerminalPreview(v *domain.Vulnerability) {
 	cveStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF0055"))
 	fieldStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#00D7D7"))
 
+	header := "🔔 [Slack Block Kit Preview]"
+	if n.endpoint.Name != "" {
+		header = fmt.Sprintf("🔔 [Slack Preview: %s]", n.endpoint.Name)
+	}
+
 	content := fmt.Sprintf(
-		"🔔 [Slack Block Kit Preview]\n%s: %s\n%s %s | %s %v | %s %t\n",
+		"%s\n%s: %s\n%s %s | %s %v | %s %t\n",
+		header,
 		cveStyle.Render(fmt.Sprintf("[%s] %s", v.Severity, v.CveID)),
 		v.Title,
 		fieldStyle.Render("Severity:"), v.Severity,

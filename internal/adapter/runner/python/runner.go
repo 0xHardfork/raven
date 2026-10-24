@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,12 +19,13 @@ import (
 )
 
 type Runner struct {
-	cfg config.PythonConfig
+	cfg      config.PythonConfig
+	scrapers config.ScrapersConfig
 }
 
 var _ port.ScriptRunnerPort = (*Runner)(nil)
 
-func NewRunner(cfg config.PythonConfig) *Runner {
+func NewRunner(cfg config.PythonConfig, scrapers ...config.ScrapersConfig) *Runner {
 	if cfg.BinaryPath == "" {
 		cfg.BinaryPath = "python3"
 	}
@@ -33,7 +35,91 @@ func NewRunner(cfg config.PythonConfig) *Runner {
 	if cfg.TimeoutSec <= 0 {
 		cfg.TimeoutSec = 60
 	}
-	return &Runner{cfg: cfg}
+	var sc config.ScrapersConfig
+	if len(scrapers) > 0 {
+		sc = scrapers[0]
+	}
+	return &Runner{cfg: cfg, scrapers: sc}
+}
+
+func (r *Runner) appendConfigArgs(scriptPath string, args []string) []string {
+	hasFlag := func(flag string) bool {
+		for _, a := range args {
+			if a == flag || strings.HasPrefix(a, flag+"=") {
+				return true
+			}
+		}
+		return false
+	}
+
+	result := append([]string{}, args...)
+	globalKeywords := r.scrapers.AllKeywords()
+
+	if strings.Contains(scriptPath, "github_pocs") {
+		if r.scrapers.GitHub.Query != "" && !hasFlag("--query") {
+			result = append(result, "--query", r.scrapers.GitHub.Query)
+		}
+		keywords := r.scrapers.GitHub.Keywords
+		if len(keywords) == 0 {
+			keywords = globalKeywords
+		}
+		if len(keywords) > 0 && !hasFlag("--keywords") {
+			result = append(result, "--keywords", strings.Join(keywords, ","))
+		}
+		if r.scrapers.GitHub.Token != "" && !hasFlag("--token") {
+			result = append(result, "--token", r.scrapers.GitHub.Token)
+		}
+		if r.scrapers.GitHub.Limit > 0 && !hasFlag("--limit") {
+			result = append(result, "--limit", strconv.Itoa(r.scrapers.GitHub.Limit))
+		}
+	} else if strings.Contains(scriptPath, "cisa_kev") {
+		if r.scrapers.CISA.FeedURL != "" && !hasFlag("--url") {
+			result = append(result, "--url", r.scrapers.CISA.FeedURL)
+		}
+		keywords := r.scrapers.CISA.Keywords
+		if len(keywords) == 0 {
+			keywords = globalKeywords
+		}
+		if len(keywords) > 0 && !hasFlag("--keywords") {
+			result = append(result, "--keywords", strings.Join(keywords, ","))
+		}
+		if r.scrapers.CISA.Limit > 0 && !hasFlag("--limit") {
+			result = append(result, "--limit", strconv.Itoa(r.scrapers.CISA.Limit))
+		}
+	} else if strings.Contains(scriptPath, "exploit_db") {
+		if r.scrapers.ExploitDB.CSVURL != "" && !hasFlag("--csv-url") {
+			result = append(result, "--csv-url", r.scrapers.ExploitDB.CSVURL)
+		}
+		keywords := r.scrapers.ExploitDB.Keywords
+		if len(keywords) == 0 {
+			keywords = globalKeywords
+		}
+		if len(keywords) > 0 && !hasFlag("--keywords") {
+			result = append(result, "--keywords", strings.Join(keywords, ","))
+		}
+		if r.scrapers.ExploitDB.Limit > 0 && !hasFlag("--limit") {
+			result = append(result, "--limit", strconv.Itoa(r.scrapers.ExploitDB.Limit))
+		}
+	} else if strings.Contains(scriptPath, "nvd_cve") {
+		if r.scrapers.NVD.Days > 0 && !hasFlag("--days") {
+			result = append(result, "--days", strconv.Itoa(r.scrapers.NVD.Days))
+		}
+		keywords := r.scrapers.NVD.Keywords
+		if len(keywords) == 0 {
+			keywords = globalKeywords
+		}
+		if len(keywords) > 0 && !hasFlag("--keywords") {
+			result = append(result, "--keywords", strings.Join(keywords, ","))
+		}
+		if r.scrapers.NVD.APIKey != "" && !hasFlag("--api-key") {
+			result = append(result, "--api-key", r.scrapers.NVD.APIKey)
+		}
+		if r.scrapers.NVD.Limit > 0 && !hasFlag("--limit") {
+			result = append(result, "--limit", strconv.Itoa(r.scrapers.NVD.Limit))
+		}
+	}
+
+	return result
 }
 
 func (r *Runner) RunScript(ctx context.Context, scriptPath string, args ...string) ([]*domain.Vulnerability, error) {
@@ -41,7 +127,8 @@ func (r *Runner) RunScript(ctx context.Context, scriptPath string, args ...strin
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmdArgs := append([]string{scriptPath}, args...)
+	fullArgs := r.appendConfigArgs(scriptPath, args)
+	cmdArgs := append([]string{scriptPath}, fullArgs...)
 	cmd := exec.CommandContext(execCtx, r.cfg.BinaryPath, cmdArgs...)
 
 	var stdoutBuf bytes.Buffer
@@ -51,7 +138,7 @@ func (r *Runner) RunScript(ctx context.Context, scriptPath string, args ...strin
 
 	logger.L().Info("executing python scraper",
 		"script", scriptPath,
-		"args", args,
+		"args", fullArgs,
 		"timeout", timeout.String(),
 	)
 

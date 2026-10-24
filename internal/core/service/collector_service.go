@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"raven/internal/core/domain"
 	"raven/internal/core/port"
@@ -70,6 +71,9 @@ func (s *CollectorService) CollectAll(ctx context.Context, targetCategories []st
 
 	if s.notifier != nil && len(allVulns) > 0 {
 		for _, v := range allVulns {
+			if s.repo != nil && v.UpdatedAt.Sub(v.CreatedAt) > 500*time.Millisecond {
+				continue
+			}
 			_ = s.notifier.SendThreatAlert(ctx, v)
 		}
 	}
@@ -89,21 +93,9 @@ func (s *CollectorService) CollectScript(ctx context.Context, scriptPath string,
 	}
 
 	if len(targetCategories) > 0 {
-		targetMap := make(map[string]struct{})
-		for _, c := range targetCategories {
-			targetMap[strings.ToLower(strings.TrimSpace(c))] = struct{}{}
-		}
-
 		filtered := make([]*domain.Vulnerability, 0, len(vulns))
 		for _, v := range vulns {
-			matched := false
-			for _, cat := range v.Categories {
-				if _, ok := targetMap[strings.ToLower(cat)]; ok {
-					matched = true
-					break
-				}
-			}
-			if matched {
+			if domain.MatchAnyCategoryRule(targetCategories, v.Categories) {
 				filtered = append(filtered, v)
 			}
 		}

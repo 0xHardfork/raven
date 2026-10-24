@@ -3,6 +3,7 @@
 import sys
 import os
 import json
+import re
 import argparse
 from datetime import datetime, timedelta, timezone
 import urllib.request
@@ -49,10 +50,11 @@ def log(msg: str):
     sys.stderr.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [nvd_cve] {msg}\n")
     sys.stderr.flush()
 
-def fetch_nvd_cves(limit: int = 20) -> list:
+def fetch_nvd_cves(limit: int = 20, days: int = 120, custom_api_key: str = "", custom_keywords: list = None) -> list:
     log("querying NVD REST API 2.0 for recent critical vulnerabilities")
     now = datetime.now(timezone.utc)
-    start_date = now - timedelta(days=120)
+    lookback_days = days if days > 0 else 120
+    start_date = now - timedelta(days=lookback_days)
     params = {
         "pubStartDate": start_date.strftime("%Y-%m-%dT%H:%M:%S.000"),
         "pubEndDate": now.strftime("%Y-%m-%dT%H:%M:%S.000"),
@@ -65,9 +67,11 @@ def fetch_nvd_cves(limit: int = 20) -> list:
         "User-Agent": "Raven-Threat-Collector/1.0",
         "Accept": "application/json"
     }
-    api_key = os.getenv("NVD_API_KEY")
+    api_key = custom_api_key or os.getenv("NVD_API_KEY")
     if api_key:
         headers["apiKey"] = api_key
+
+    match_keywords = custom_keywords or []
 
     try:
         req = urllib.request.Request(url, headers=headers)
@@ -101,10 +105,15 @@ def fetch_nvd_cves(limit: int = 20) -> list:
                     cvss_score = primary_v31.get("baseScore")
 
                 categories = ["nvd"]
-                lower_desc = desc_text.lower()
-                for lang_kw in ["java", "spring", "golang", "php", "python", "c", "cpp", "windows", "linux"]:
-                    if lang_kw in lower_desc:
-                        categories.append(lang_kw)
+                for lang_kw in match_keywords:
+                    k = lang_kw.lower().strip()
+                    if not k:
+                        continue
+                    if k == "rce":
+                        if re.search(r'\b(rce|remote code execution)\b', desc_text, re.IGNORECASE) and k not in categories:
+                            categories.append(k)
+                    elif re.search(r'(?i)\b' + re.escape(k) + r'(?:\b|\d|[_-])', desc_text) and k not in categories:
+                        categories.append(k)
 
                 results.append({
                     "cve_id": cve_id,
@@ -132,13 +141,17 @@ def main():
     parser.add_argument("--mock", action="store_true", help="output mock test dataset")
     parser.add_argument("--limit", type=int, default=15, help="maximum items to fetch")
     parser.add_argument("--categories", type=str, default="", help="filter categories")
+    parser.add_argument("--days", type=int, default=120, help="lookback window in days")
+    parser.add_argument("--api-key", type=str, default="", help="nvd api key")
+    parser.add_argument("--keywords", type=str, default="", help="comma-separated ecosystem keywords")
     args = parser.parse_args()
 
     if args.mock:
         log("running in mock mode, returning curated NVD dataset")
         results = MOCK_DATA
     else:
-        results = fetch_nvd_cves(limit=args.limit)
+        kw_list = [k.strip() for k in args.keywords.split(",") if k.strip()] if args.keywords else None
+        results = fetch_nvd_cves(limit=args.limit, days=args.days, custom_api_key=args.api_key, custom_keywords=kw_list)
 
     sys.stdout.write(json.dumps(results, indent=2, ensure_ascii=False))
     sys.stdout.flush()

@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	_ "github.com/lib/pq"
 	"github.com/spf13/cobra"
+	"raven/internal/adapter/notifier"
 	"raven/internal/adapter/runner/python"
 	"raven/internal/adapter/storage/postgres"
 	"raven/internal/core/domain"
@@ -33,7 +34,7 @@ Exploit-DB, and NVD, categorizing by technical ecosystem and upserting into Post
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 
-		runner := python.NewRunner(cfg.Python)
+		runner := python.NewRunner(cfg.Python, cfg.Scrapers)
 
 		var repo port.RepositoryPort
 		db, err := sql.Open("postgres", cfg.Database.DSN())
@@ -50,7 +51,12 @@ Exploit-DB, and NVD, categorizing by technical ecosystem and upserting into Post
 			return fmt.Errorf("unable to connect to PostgreSQL (DSN: %s); use --dry-run or --mock for offline mode", cfg.Database.DSN())
 		}
 
-		collectorSvc := service.NewCollectorService(runner, repo, nil)
+		var notifMgr port.NotifierPort
+		if cfg.Notifier.Enabled || cfg.Notifier.DryRun {
+			notifMgr = notifier.NewManager(cfg.Notifier)
+		}
+
+		collectorSvc := service.NewCollectorService(runner, repo, notifMgr)
 
 		var categories []string
 		if collectCategory != "" {
@@ -59,6 +65,10 @@ Exploit-DB, and NVD, categorizing by technical ecosystem and upserting into Post
 					categories = append(categories, t)
 				}
 			}
+		} else if len(cfg.Notifier.AllTargetCategories()) > 0 {
+			categories = cfg.Notifier.AllTargetCategories()
+		} else if len(cfg.Watcher.Categories) > 0 {
+			categories = cfg.Watcher.Categories
 		}
 
 		titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7D56F4"))
@@ -73,9 +83,9 @@ Exploit-DB, and NVD, categorizing by technical ecosystem and upserting into Post
 		)
 
 		extraArgs := []string{}
-		if dryRun || collectMock {
+		if collectMock {
 			extraArgs = append(extraArgs, "--mock")
-			fmt.Println(infoStyle.Render("ℹ Running in dry-run/mock mode; using test dataset"))
+			fmt.Println(infoStyle.Render("ℹ Running in mock mode; using test dataset"))
 		}
 
 		if collectScript != "" {

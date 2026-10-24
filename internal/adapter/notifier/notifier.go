@@ -2,7 +2,6 @@ package notifier
 
 import (
 	"context"
-	"strings"
 	"sync"
 
 	"raven/internal/adapter/notifier/slack"
@@ -26,7 +25,14 @@ func NewManager(cfg config.NotifierConfig) *Manager {
 	}
 
 	if cfg.Channels.Slack.Enabled || cfg.DryRun {
-		m.channels = append(m.channels, slack.NewNotifier(cfg.Channels.Slack, cfg.DryRun))
+		endpoints := cfg.Channels.Slack.AllEndpoints(cfg.FilterCategories, cfg.MinSeverity)
+		if len(endpoints) == 0 && cfg.DryRun {
+			m.channels = append(m.channels, slack.NewNotifier(cfg.Channels.Slack, cfg.DryRun))
+		} else {
+			for _, ep := range endpoints {
+				m.channels = append(m.channels, slack.NewNotifier(cfg.Channels.Slack, cfg.DryRun, ep))
+			}
+		}
 	}
 
 	return m
@@ -35,6 +41,17 @@ func NewManager(cfg config.NotifierConfig) *Manager {
 func (m *Manager) ShouldNotify(v *domain.Vulnerability) bool {
 	if !m.cfg.Enabled && !m.cfg.DryRun {
 		return false
+	}
+
+	if len(m.cfg.FilterCategories) > 0 {
+		if !domain.MatchAnyCategoryRule(m.cfg.FilterCategories, v.Categories) {
+			return false
+		}
+	} else if len(m.cfg.Channels.Slack.Endpoints) > 0 {
+		allCats := m.cfg.AllTargetCategories()
+		if len(allCats) > 0 && !domain.MatchAnyCategoryRule(allCats, v.Categories) {
+			return false
+		}
 	}
 
 	if v.IsExploited && m.cfg.AlwaysNotifyExploited {
@@ -50,25 +67,6 @@ func (m *Manager) ShouldNotify(v *domain.Vulnerability) bool {
 
 	if m.cfg.OnlyWithPoC && len(v.PoCs) == 0 {
 		return false
-	}
-
-	if len(m.cfg.FilterCategories) > 0 {
-		match := false
-		for _, target := range m.cfg.FilterCategories {
-			targetLower := strings.ToLower(strings.TrimSpace(target))
-			for _, c := range v.Categories {
-				if strings.ToLower(c) == targetLower {
-					match = true
-					break
-				}
-			}
-			if match {
-				break
-			}
-		}
-		if !match {
-			return false
-		}
 	}
 
 	return true

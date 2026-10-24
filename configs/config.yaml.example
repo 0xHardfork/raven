@@ -1,0 +1,69 @@
+database:
+  host: "127.0.0.1"
+  port: 5432
+  user: "postgres"
+  password: "postgres_secure_password"
+  dbname: "raven"
+  sslmode: "disable"
+  max_open_conns: 25
+  max_idle_conns: 5
+  auto_migrate: true
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+watcher:
+  interval: "15m"
+  categories: ["php", "java", "golang"]
+  sources: []
+
+notifier:
+  enabled: true
+  dry_run: false
+  min_severity: "HIGH"
+  only_with_poc: false
+  always_notify_exploited: true
+  filter_categories: []
+  channels:
+    slack:
+      enabled: true
+      webhook_urls:
+        - "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK_URL_1"
+        - "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK_URL_2"
+      channel: "#security-threats"
+      bot_token: ""
+      template: |
+        *{{severity_emoji}} [{{severity}}] <{{nvd_url}}|{{cve_id}}>* — *{{title}}*
+        > {{description}}
+
+        • *Severity:* `{{severity}}` (CVSS: `{{cvss}}`)
+        • *In-The-Wild:* {{in_the_wild}}
+        • *Categories:* {{categories}}
+        • *CVE Links:* <{{nvd_url}}|NVD> • <{{cve_org_url}}|CVE.org>
+
+        *🔥 Available Exploits / PoCs:*
+        {{pocs}}
+
+python:
+  binary_path: "python3"
+  scripts_dir: "scripts"
+  timeout_sec: 60
+
+scrapers:
+  github:
+    query: "CVE in:name,description fork:false"
+    keywords: ["php", "java", "spring", "golang", "python", "rust", "wordpress", "apache", "nginx", "rce", "ssrf"]
+    limit: 30
+    token: ""
+  nvd:
+    days: 120
+    limit: 30
+    api_key: ""
+  cisa:
+    feed_url: "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+    limit: 30
+  exploitdb:
+    csv_url: "https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv"
+    keywords: ["php", "java", "golang", "python", "linux", "windows", "rce", "sqli"]
+    limit: 30

@@ -1,19 +1,29 @@
-# ==========================================
-# Raven .gitignore 配置
-# ==========================================
+# Configuration files with secrets
+configs/*.yaml
+configs/*.yml
+!configs/config.yaml.example
+!configs/config.example.yaml
 
-# 1. 敏感配置与密钥 (非常重要)
-# 提交 config.example.yaml 作为模板，忽略带有真实凭据的本地配置文件
-configs/config.yaml
-configs/*.local.yaml
+# Environment variables & secrets
 *.env
 *.env.*
 !.env.example
+*.pem
+*.key
+*.crt
+*.cert
+*.p12
+*.pfx
+secrets/
+.secrets/
+credentials/
+.credentials/
 
-# 2. Go 编译产物与二进制文件
-bin/
-dist/
-raven
+# Binaries & build artifacts
+/bin/
+/dist/
+/raven
+raven-linux-amd64
 *.exe
 *.exe~
 *.dll
@@ -24,7 +34,7 @@ raven
 go.work
 go.work.sum
 
-# 3. Python 爬虫虚拟环境与缓存
+# Python cache & virtual environments
 __pycache__/
 *.py[cod]
 *$py.class
@@ -37,19 +47,21 @@ env/
 .mypy_cache/
 .ruff_cache/
 
-# 4. 运行日志与临时数据
+# Runtime logs & data
 logs/
 *.log
 tmp/
 temp/
 data/
+*.sqlite
+*.db
 
-# 5. 测试覆盖率报告
+# Coverage & Profiling
 coverage.txt
 coverage.html
 profile.out
 
-# 6. 操作系统与编辑器临时文件
+# OS specific files
 .DS_Store
 .DS_Store?
 ._*
@@ -58,7 +70,7 @@ profile.out
 ehthumbs.db
 Thumbs.db
 
-# IDE 配置
+# IDEs
 .idea/
 .vscode/*
 !.vscode/settings.json
@@ -67,6 +79,5 @@ Thumbs.db
 *.swo
 *~
 
-# 7. Agent 与临时缓存
-# .specify 为团队共享的 SDD 规范目录需提交，临时生成目录可忽略
+# Spec Kit temporary files
 .specify/tmp/

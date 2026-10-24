@@ -3,6 +3,7 @@
 import sys
 import os
 import json
+import re
 import argparse
 from datetime import datetime
 import urllib.request
@@ -57,12 +58,15 @@ def log(msg: str):
     sys.stderr.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [cisa_kev] {msg}\n")
     sys.stderr.flush()
 
-def fetch_cisa_kev(limit: int = 50) -> list:
-    log(f"downloading official CISA KEV JSON catalog: {CISA_KEV_FEED_URL}")
+def fetch_cisa_kev(limit: int = 50, feed_url: str = "", custom_keywords: list = None) -> list:
+    url = feed_url or CISA_KEV_FEED_URL
+    log(f"downloading official CISA KEV JSON catalog: {url}")
     req = urllib.request.Request(
-        CISA_KEV_FEED_URL,
+        url,
         headers={"User-Agent": "Raven-Threat-Collector/1.0"}
     )
+
+    match_keywords = custom_keywords or []
 
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
@@ -83,9 +87,16 @@ def fetch_cisa_kev(limit: int = 50) -> list:
                 product = (item.get("product") or "").lower()
                 
                 categories = ["kev", "exploited-in-the-wild"]
-                for keyword in ["java", "spring", "golang", "php", "python", "apache", "cisco", "microsoft", "linux"]:
-                    if keyword in vendor or keyword in product:
-                        categories.append(keyword)
+                combined_info = f"{vendor} {product} {item.get('vulnerabilityName', '')} {item.get('shortDescription', '')}"
+                for keyword in match_keywords:
+                    k = keyword.lower().strip()
+                    if not k:
+                        continue
+                    if k == "rce":
+                        if re.search(r'\b(rce|remote code execution)\b', combined_info, re.IGNORECASE) and k not in categories:
+                            categories.append(k)
+                    elif re.search(r'\b' + re.escape(k) + r'\b', combined_info, re.IGNORECASE) and k not in categories:
+                        categories.append(k)
 
                 results.append({
                     "cve_id": cve_id,
@@ -115,13 +126,16 @@ def main():
     parser.add_argument("--mock", action="store_true", help="output mock test dataset")
     parser.add_argument("--limit", type=int, default=30, help="maximum items to fetch")
     parser.add_argument("--categories", type=str, default="", help="filter categories")
+    parser.add_argument("--url", type=str, default="", help="custom cisa kev json feed url")
+    parser.add_argument("--keywords", type=str, default="", help="comma-separated ecosystem keywords")
     args = parser.parse_args()
 
     if args.mock:
         log("running in mock mode, returning curated CISA KEV dataset")
         results = MOCK_DATA
     else:
-        results = fetch_cisa_kev(limit=args.limit)
+        kw_list = [k.strip() for k in args.keywords.split(",") if k.strip()] if args.keywords else None
+        results = fetch_cisa_kev(limit=args.limit, feed_url=args.url, custom_keywords=kw_list)
 
     sys.stdout.write(json.dumps(results, indent=2, ensure_ascii=False))
     sys.stdout.flush()

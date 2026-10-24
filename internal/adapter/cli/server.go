@@ -56,7 +56,7 @@ for threat queries, metrics dashboard, and asynchronous collection triggers.`,
 			}
 		}
 
-		runner := python.NewRunner(cfg.Python)
+		runner := python.NewRunner(cfg.Python, cfg.Scrapers)
 		notifierMgr := notifier.NewManager(cfg.Notifier)
 		collectorSvc := service.NewCollectorService(runner, repo, notifierMgr)
 		var threatSvc *service.ThreatQueryService
