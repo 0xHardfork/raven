@@ -15,14 +15,12 @@ import (
 	"raven/internal/pkg/logger"
 )
 
-// Notifier Slack 告警推送适配器
 type Notifier struct {
 	cfg        config.SlackConfig
 	dryRun     bool
 	httpClient *http.Client
 }
 
-// NewNotifier 创建 Slack 推送器实例
 func NewNotifier(cfg config.SlackConfig, dryRun bool) *Notifier {
 	return &Notifier{
 		cfg:    cfg,
@@ -33,11 +31,9 @@ func NewNotifier(cfg config.SlackConfig, dryRun bool) *Notifier {
 	}
 }
 
-// SendThreatAlert 发送单条高危威胁 Block Kit 格式预警卡片
 func (n *Notifier) SendThreatAlert(ctx context.Context, vuln *domain.Vulnerability) error {
 	payload := n.buildBlockKitPayload(vuln)
 
-	// 若处于 Dry-Run 演练模式或未配置 Webhook，输出终端高亮预览
 	if n.dryRun || n.cfg.WebhookURL == "" {
 		n.renderTerminalPreview(vuln)
 		return nil
@@ -68,7 +64,6 @@ func (n *Notifier) SendThreatAlert(ctx context.Context, vuln *domain.Vulnerabili
 	return nil
 }
 
-// SendBatchAlert 发送批量威胁汇总通知
 func (n *Notifier) SendBatchAlert(ctx context.Context, vulns []*domain.Vulnerability) error {
 	for _, v := range vulns {
 		if err := n.SendThreatAlert(ctx, v); err != nil {
@@ -140,12 +135,11 @@ func (n *Notifier) buildBlockKitPayload(v *domain.Vulnerability) map[string]any 
 		},
 	}
 
-	// 附带 PoC 链接专区
 	if len(v.PoCs) > 0 {
 		var pocLines []string
 		for i, p := range v.PoCs {
 			if i >= 3 {
-				pocLines = append(pocLines, fmt.Sprintf("... (共 %d 个利用代码)", len(v.PoCs)))
+				pocLines = append(pocLines, fmt.Sprintf("... (%d exploits total)", len(v.PoCs)))
 				break
 			}
 			author := p.Author
@@ -164,7 +158,6 @@ func (n *Notifier) buildBlockKitPayload(v *domain.Vulnerability) map[string]any 
 		})
 	}
 
-	// 底部时间与系统签名
 	blocks = append(blocks, map[string]any{
 		"type": "context",
 		"elements": []map[string]any{
@@ -191,16 +184,16 @@ func (n *Notifier) renderTerminalPreview(v *domain.Vulnerability) {
 	fieldStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#00D7D7"))
 
 	content := fmt.Sprintf(
-		"🔔 [Slack Block Kit 预览]\n%s: %s\n%s %s | %s %v | %s %t\n",
+		"🔔 [Slack Block Kit Preview]\n%s: %s\n%s %s | %s %v | %s %t\n",
 		cveStyle.Render(fmt.Sprintf("[%s] %s", v.Severity, v.CveID)),
 		v.Title,
-		fieldStyle.Render("评级:"), v.Severity,
-		fieldStyle.Render("分类:"), v.Categories,
-		fieldStyle.Render("在野利用:"), v.IsExploited,
+		fieldStyle.Render("Severity:"), v.Severity,
+		fieldStyle.Render("Categories:"), v.Categories,
+		fieldStyle.Render("Exploited:"), v.IsExploited,
 	)
 
 	if len(v.PoCs) > 0 {
-		content += fieldStyle.Render(fmt.Sprintf("可用 PoC (%d个):\n", len(v.PoCs)))
+		content += fieldStyle.Render(fmt.Sprintf("Available PoCs (%d):\n", len(v.PoCs)))
 		for _, p := range v.PoCs {
 			content += fmt.Sprintf("  ↳ %s\n", p.URL)
 		}

@@ -11,7 +11,6 @@ import (
 	"raven/internal/pkg/logger"
 )
 
-// CollectSummary 采集结果汇总
 type CollectSummary struct {
 	TotalScripts int                     `json:"total_scripts"`
 	TotalFound   int                     `json:"total_found"`
@@ -20,14 +19,12 @@ type CollectSummary struct {
 	Vulns        []*domain.Vulnerability `json:"vulns,omitempty"`
 }
 
-// CollectorService 核心采集调度服务
 type CollectorService struct {
 	runner   port.ScriptRunnerPort
 	repo     port.RepositoryPort
 	notifier port.NotifierPort
 }
 
-// NewCollectorService 创建采集服务
 func NewCollectorService(runner port.ScriptRunnerPort, repo port.RepositoryPort, notifier port.NotifierPort) *CollectorService {
 	return &CollectorService{
 		runner:   runner,
@@ -36,7 +33,6 @@ func NewCollectorService(runner port.ScriptRunnerPort, repo port.RepositoryPort,
 	}
 }
 
-// CollectAll 执行全量或指定生态分类的脚本采集
 func (s *CollectorService) CollectAll(ctx context.Context, targetCategories []string) (*CollectSummary, error) {
 	scripts, err := s.runner.ListScripts(ctx)
 	if err != nil {
@@ -63,7 +59,6 @@ func (s *CollectorService) CollectAll(ctx context.Context, targetCategories []st
 	summary.TotalFound = len(allVulns)
 	summary.Vulns = allVulns
 
-	// 若存在持久化仓库，执行批量 Upsert 存储
 	if s.repo != nil && len(allVulns) > 0 {
 		ins, upd, err := s.repo.BatchUpsert(ctx, allVulns)
 		if err != nil {
@@ -73,7 +68,6 @@ func (s *CollectorService) CollectAll(ctx context.Context, targetCategories []st
 		summary.Updated = upd
 	}
 
-	// 若配置了通知且发现了新威胁，触发推送检查
 	if s.notifier != nil && len(allVulns) > 0 {
 		for _, v := range allVulns {
 			_ = s.notifier.SendThreatAlert(ctx, v)
@@ -83,7 +77,6 @@ func (s *CollectorService) CollectAll(ctx context.Context, targetCategories []st
 	return summary, nil
 }
 
-// CollectScript 执行单个脚本采集
 func (s *CollectorService) CollectScript(ctx context.Context, scriptPath string, targetCategories []string) ([]*domain.Vulnerability, error) {
 	var args []string
 	if len(targetCategories) > 0 {
@@ -95,7 +88,6 @@ func (s *CollectorService) CollectScript(ctx context.Context, scriptPath string,
 		return nil, err
 	}
 
-	// 若设置了分类过滤，过滤出包含目标分类的条目
 	if len(targetCategories) > 0 {
 		targetMap := make(map[string]struct{})
 		for _, c := range targetCategories {
@@ -121,7 +113,6 @@ func (s *CollectorService) CollectScript(ctx context.Context, scriptPath string,
 	return vulns, nil
 }
 
-// CollectSource 根据数据源名称定位并执行脚本 (如 source="github" -> "github_pocs.py")
 func (s *CollectorService) CollectSource(ctx context.Context, source string, targetCategories []string) ([]*domain.Vulnerability, error) {
 	scripts, err := s.runner.ListScripts(ctx)
 	if err != nil {

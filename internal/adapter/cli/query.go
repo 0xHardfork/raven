@@ -30,9 +30,10 @@ var (
 
 var queryCmd = &cobra.Command{
 	Use:   "query",
-	Short: "多维检索与格式化展示威胁情报",
-	Long: `支持按 CVE 编号、技术生态分类 (Java/Golang/PHP 等)、CVSS 评级、
-在野利用标志与 PoC 存在性进行快速筛选，支持 Table 彩色表格、JSON 与 Markdown 格式输出。`,
+	Short: "Query and inspect stored threat intelligence",
+	Long: `Filter and inspect vulnerabilities by CVE ID, ecosystem categories,
+CVSS severity, in-the-wild exploitation status, and PoC availability.
+Supports Table, JSON, and Markdown output formats.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -44,27 +45,25 @@ var queryCmd = &cobra.Command{
 		defer db.Close()
 
 		if err := db.PingContext(ctx); err != nil {
-			return fmt.Errorf("无法连接数据库: %w (请先启动 PostgreSQL 或通过 'raven migrate up' 初始化数据库)", err)
+			return fmt.Errorf("unable to connect to database: %w (start PostgreSQL or run 'raven migrate up')", err)
 		}
 
 		repo := postgres.NewRepository(db)
 		threatSvc := service.NewThreatQueryService(repo)
 
-		// 1. 如果指定了单条 CVE 精准查询
 		if queryCVE != "" {
 			vuln, err := threatSvc.GetThreat(ctx, queryCVE)
 			if err != nil {
 				return err
 			}
 			if vuln == nil {
-				fmt.Printf("未检索到编号为 '%s' 的漏洞记录。\n", queryCVE)
+				fmt.Printf("No vulnerability record found for '%s'.\n", queryCVE)
 				return nil
 			}
 			renderSingleVuln(vuln, queryOutput)
 			return nil
 		}
 
-		// 2. 多维列表过滤查询
 		filter := domain.ThreatFilter{
 			Keyword:  queryKeyword,
 			Severity: querySeverity,
@@ -108,27 +107,27 @@ func renderSingleVuln(v *domain.Vulnerability, format string) {
 	cveStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#00D7D7"))
 	labelStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#A0A0A0"))
 
-	fmt.Println(titleStyle.Render("\n=== 漏洞威胁全景详情 ==="))
-	fmt.Printf("%s %s\n", labelStyle.Render("CVE 编号:   "), cveStyle.Render(v.CveID))
-	fmt.Printf("%s %s\n", labelStyle.Render("漏洞标题:   "), v.Title)
-	fmt.Printf("%s %s\n", labelStyle.Render("严重级别:   "), formatSeverity(v.Severity))
+	fmt.Println(titleStyle.Render("\n=== Threat Intelligence Details ==="))
+	fmt.Printf("%s %s\n", labelStyle.Render("CVE ID:       "), cveStyle.Render(v.CveID))
+	fmt.Printf("%s %s\n", labelStyle.Render("Title:        "), v.Title)
+	fmt.Printf("%s %s\n", labelStyle.Render("Severity:     "), formatSeverity(v.Severity))
 	if v.CvssScore != nil {
-		fmt.Printf("%s %.1f\n", labelStyle.Render("CVSS 评分:  "), *v.CvssScore)
+		fmt.Printf("%s %.1f\n", labelStyle.Render("CVSS Score:   "), *v.CvssScore)
 	}
-	fmt.Printf("%s %v\n", labelStyle.Render("生态分类:   "), v.Categories)
-	fmt.Printf("%s %t\n", labelStyle.Render("在野利用:   "), v.IsExploited)
-	fmt.Printf("%s %v\n", labelStyle.Render("情报源:     "), v.Sources)
+	fmt.Printf("%s %v\n", labelStyle.Render("Categories:   "), v.Categories)
+	fmt.Printf("%s %t\n", labelStyle.Render("Exploited:    "), v.IsExploited)
+	fmt.Printf("%s %v\n", labelStyle.Render("Sources:      "), v.Sources)
 	if v.PublishedAt != nil {
-		fmt.Printf("%s %s\n", labelStyle.Render("披露时间:   "), v.PublishedAt.Format("2006-01-02 15:04:05"))
+		fmt.Printf("%s %s\n", labelStyle.Render("Published:    "), v.PublishedAt.Format("2006-01-02 15:04:05"))
 	}
-	fmt.Printf("%s\n  %s\n", labelStyle.Render("描述信息:"), v.Description)
+	fmt.Printf("%s\n  %s\n", labelStyle.Render("Description:"), v.Description)
 
-	fmt.Printf("\n%s (%d 个):\n", labelStyle.Render("可用 PoC 列表"), len(v.PoCs))
+	fmt.Printf("\n%s (%d total):\n", labelStyle.Render("Available PoCs"), len(v.PoCs))
 	if len(v.PoCs) == 0 {
-		fmt.Println("  (暂无公开验证代码)")
+		fmt.Println("  (No public exploit available)")
 	} else {
 		for i, p := range v.PoCs {
-			fmt.Printf("  [%d] %s (作者: %s)\n", i+1, p.URL, p.Author)
+			fmt.Printf("  [%d] %s (author: %s)\n", i+1, p.URL, p.Author)
 		}
 	}
 }
@@ -141,13 +140,14 @@ func renderVulnList(res *domain.PaginationResult[*domain.Vulnerability], format 
 	}
 
 	if strings.ToLower(format) == "markdown" {
-		fmt.Printf("### 威胁情报列表 (共 %d 条，第 %d/%d 页)\n\n", res.Total, res.Page, (res.Total+int64(res.PageSize)-1)/int64(res.PageSize))
-		fmt.Println("| CVE | 危险等级 | 在野利用 | 分类 | PoC 数量 | 标题 |")
+		fmt.Printf("### Threat Intelligence List (%d records, page %d/%d)\n\n",
+			res.Total, res.Page, (res.Total+int64(res.PageSize)-1)/int64(res.PageSize))
+		fmt.Println("| CVE | Severity | In-Wild | Categories | PoCs | Title |")
 		fmt.Println("| :--- | :--- | :---: | :--- | :---: | :--- |")
 		for _, v := range res.Items {
-			exploited := "否"
+			exploited := "No"
 			if v.IsExploited {
-				exploited = "**是(KEV)**"
+				exploited = "**YES(KEV)**"
 			}
 			fmt.Printf("| `%s` | %s | %s | `%s` | %d | %s |\n",
 				v.CveID, v.Severity, exploited, strings.Join(v.Categories, ","), len(v.PoCs), v.Title)
@@ -155,12 +155,11 @@ func renderVulnList(res *domain.PaginationResult[*domain.Vulnerability], format 
 		return
 	}
 
-	// 终端表格输出
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7D56F4"))
-	fmt.Println(titleStyle.Render(fmt.Sprintf("\n=== 威胁检索结果 (共 %d 条记录，当前第 %d 页) ===", res.Total, res.Page)))
+	fmt.Println(titleStyle.Render(fmt.Sprintf("\n=== Threat Query Results (%d records, Page %d) ===", res.Total, res.Page)))
 
 	if len(res.Items) == 0 {
-		fmt.Println("未检索到符合条件的漏洞。")
+		fmt.Println("No matching vulnerabilities found.")
 		return
 	}
 
@@ -218,14 +217,14 @@ func formatSeverityFixed(s domain.Severity, width int) string {
 }
 
 func init() {
-	queryCmd.Flags().StringVar(&queryCVE, "cve", "", "按特定 CVE 编号精准查询")
-	queryCmd.Flags().StringVarP(&queryCategory, "category", "k", "", "按生态分类筛选 (如 java,golang,php)")
-	queryCmd.Flags().StringVarP(&querySeverity, "severity", "s", "", "按危害等级筛选 (CRITICAL, HIGH, MEDIUM, LOW)")
-	queryCmd.Flags().BoolVar(&queryHasPoC, "has-poc", false, "仅展示存在 PoC 验证代码的漏洞")
-	queryCmd.Flags().BoolVar(&queryExploited, "exploited", false, "仅展示 CISA 在野已利用漏洞")
-	queryCmd.Flags().StringVarP(&queryKeyword, "keyword", "q", "", "关键词模糊搜索 (匹配标题与描述)")
-	queryCmd.Flags().StringVarP(&queryOutput, "output", "o", "table", "输出格式: table | json | markdown")
-	queryCmd.Flags().IntVar(&queryPage, "page", 1, "分页页码")
-	queryCmd.Flags().IntVar(&queryLimit, "limit", 20, "每页条数")
+	queryCmd.Flags().StringVar(&queryCVE, "cve", "", "exact match by CVE identifier")
+	queryCmd.Flags().StringVarP(&queryCategory, "category", "k", "", "filter by ecosystem category (e.g. java,golang,php)")
+	queryCmd.Flags().StringVarP(&querySeverity, "severity", "s", "", "filter by severity (CRITICAL, HIGH, MEDIUM, LOW)")
+	queryCmd.Flags().BoolVar(&queryHasPoC, "has-poc", false, "only return vulnerabilities with public PoCs")
+	queryCmd.Flags().BoolVar(&queryExploited, "exploited", false, "only return vulnerabilities with CISA in-the-wild exploitation")
+	queryCmd.Flags().StringVarP(&queryKeyword, "keyword", "q", "", "search keyword in title and description")
+	queryCmd.Flags().StringVarP(&queryOutput, "output", "o", "table", "output format: table | json | markdown")
+	queryCmd.Flags().IntVar(&queryPage, "page", 1, "page number")
+	queryCmd.Flags().IntVar(&queryLimit, "limit", 20, "items per page")
 	RootCmd.AddCommand(queryCmd)
 }

@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-CISA KEV (Known Exploited Vulnerabilities) 官方在野利用漏洞库同步脚本 (cisa_kev.py)
-自动将所有抓取到的漏洞标记为 is_exploited = True，并自动解析技术栈标签。
-"""
 
 import sys
 import os
@@ -74,7 +70,6 @@ def fetch_cisa_kev(limit: int = 50) -> list:
             vuln_list = data.get("vulnerabilities", [])
             log(f"successfully downloaded catalog containing {len(vuln_list)} exploited vulnerabilities")
 
-            # 按时间倒序切片
             vuln_list.reverse()
             sliced = vuln_list[:limit]
 
@@ -117,9 +112,9 @@ def fetch_cisa_kev(limit: int = 50) -> list:
 
 def main():
     parser = argparse.ArgumentParser(description="CISA Known Exploited Vulnerabilities Sync")
-    parser.add_argument("--mock", action="store_true", help="强制输出模拟测试数据")
-    parser.add_argument("--limit", type=int, default=30, help="最多同步条目数")
-    parser.add_argument("--categories", type=str, default="", help="过滤分类")
+    parser.add_argument("--mock", action="store_true", help="output mock test dataset")
+    parser.add_argument("--limit", type=int, default=30, help="maximum items to fetch")
+    parser.add_argument("--categories", type=str, default="", help="filter categories")
     args = parser.parse_args()
 
     if args.mock:

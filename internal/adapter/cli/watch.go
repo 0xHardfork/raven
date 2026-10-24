@@ -27,8 +27,8 @@ var (
 
 var watchCmd = &cobra.Command{
 	Use:   "watch",
-	Short: "启动后台定时巡检与实时预警守护进程",
-	Long:  "按照指定周期定期轮询 GitHub PoC、CISA KEV 等数据源，发现高危漏洞或新 PoC 自动触发 Slack 等渠道告警。",
+	Short: "Start background scheduled inspection and alert watcher daemon",
+	Long:  "Periodically poll threat intelligence sources, evaluate alert rules, and dispatch notifications via Slack.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
@@ -54,7 +54,6 @@ var watchCmd = &cobra.Command{
 
 		runner := python.NewRunner(cfg.Python)
 
-		// 检查数据库
 		var repo port.RepositoryPort
 		db, err := sql.Open("postgres", cfg.Database.DSN())
 		if err == nil {
@@ -66,7 +65,6 @@ var watchCmd = &cobra.Command{
 			pingCancel()
 		}
 
-		// 初始化告警推送管理器
 		notifierMgr := notifier.NewManager(cfg.Notifier)
 
 		collectorSvc := service.NewCollectorService(runner, repo, notifierMgr)
@@ -75,27 +73,27 @@ var watchCmd = &cobra.Command{
 		titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7D56F4"))
 		infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#00D7D7"))
 
-		fmt.Println(titleStyle.Render("🦅 Raven Threat Watcher 守护进程启动"))
-		fmt.Println(infoStyle.Render(fmt.Sprintf("  • 轮询周期: %s", interval)))
-		fmt.Println(infoStyle.Render(fmt.Sprintf("  • 目标生态分类: %v", categories)))
+		fmt.Println(titleStyle.Render("Raven Threat Watcher daemon starting..."))
+		fmt.Println(infoStyle.Render(fmt.Sprintf("  • Interval:   %s", interval)))
+		fmt.Println(infoStyle.Render(fmt.Sprintf("  • Categories: %v", categories)))
 		if cfg.Notifier.DryRun {
-			fmt.Println(infoStyle.Render("  • 告警模式: Dry-Run 演练模式 (终端打印预览，不外发网络请求)"))
+			fmt.Println(infoStyle.Render("  • Mode:       Dry-Run (terminal preview, no outbound webhook)"))
 		} else {
-			fmt.Println(infoStyle.Render("  • 告警模式: 实时推送 (Slack)"))
+			fmt.Println(infoStyle.Render("  • Mode:       Live Notifications (Slack)"))
 		}
-		fmt.Println("按 Ctrl+C 优雅退出...")
+		fmt.Println("Press Ctrl+C to stop...")
 
 		if err := watcherSvc.Start(ctx, interval, categories); err != nil && err != context.Canceled {
 			return err
 		}
 
-		fmt.Println("\n已优雅停止 Raven Watcher。")
+		fmt.Println("\nRaven Watcher stopped gracefully.")
 		return nil
 	},
 }
 
 func init() {
-	watchCmd.Flags().StringVarP(&watchInterval, "interval", "i", "", "巡检周期 (如 1m, 15m, 1h)")
-	watchCmd.Flags().StringVarP(&watchCategory, "category", "k", "", "限定巡检技术分类 (如 java,golang)")
+	watchCmd.Flags().StringVarP(&watchInterval, "interval", "i", "", "polling interval (e.g. 1m, 15m, 1h)")
+	watchCmd.Flags().StringVarP(&watchCategory, "category", "k", "", "filter categories for watcher (e.g. java,golang)")
 	RootCmd.AddCommand(watchCmd)
 }

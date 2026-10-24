@@ -15,7 +15,6 @@ import (
 	"raven/migrations"
 )
 
-// MigrationRecord 对应 Flyway schema history 记录
 type MigrationRecord struct {
 	Version     int64     `json:"version"`
 	Name        string    `json:"name"`
@@ -23,17 +22,14 @@ type MigrationRecord struct {
 	ExecutionMs int64     `json:"execution_ms"`
 }
 
-// Migrator Flyway 风格的数据库版本化迁移器
 type Migrator struct {
 	db *sql.DB
 }
 
-// NewMigrator 创建迁移器实例
 func NewMigrator(db *sql.DB) *Migrator {
 	return &Migrator{db: db}
 }
 
-// EnsureHistoryTable 确保 Flyway 式的版本历史记录表存在
 func (m *Migrator) EnsureHistoryTable(ctx context.Context) error {
 	query := `
 	CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -49,7 +45,6 @@ func (m *Migrator) EnsureHistoryTable(ctx context.Context) error {
 	return nil
 }
 
-// GetAppliedVersions 获取所有已执行的迁移版本
 func (m *Migrator) GetAppliedVersions(ctx context.Context) (map[int64]MigrationRecord, error) {
 	if err := m.EnsureHistoryTable(ctx); err != nil {
 		return nil, err
@@ -143,7 +138,6 @@ func loadMigrationFiles() ([]migrationFile, error) {
 	return list, nil
 }
 
-// Up 执行所有未应用的 Up 迁移
 func (m *Migrator) Up(ctx context.Context) (int, error) {
 	applied, err := m.GetAppliedVersions(ctx)
 	if err != nil {
@@ -194,7 +188,6 @@ func (m *Migrator) Up(ctx context.Context) (int, error) {
 	return appliedCount, nil
 }
 
-// Status 获取迁移状态列表
 func (m *Migrator) Status(ctx context.Context) ([]MigrationRecord, []int64, error) {
 	applied, err := m.GetAppliedVersions(ctx)
 	if err != nil {

@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
-"""
-NVD (National Vulnerability Database) 官方元数据同步脚本 (nvd_cve.py)
-用于获取权威的 CVSS v3.1 评分、官方漏洞描述和受影响范围。
-"""
 
 import sys
 import os
 import json
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import urllib.request
 import urllib.parse
 
@@ -55,7 +51,11 @@ def log(msg: str):
 
 def fetch_nvd_cves(limit: int = 20) -> list:
     log("querying NVD REST API 2.0 for recent critical vulnerabilities")
+    now = datetime.now(timezone.utc)
+    start_date = now - timedelta(days=120)
     params = {
+        "pubStartDate": start_date.strftime("%Y-%m-%dT%H:%M:%S.000"),
+        "pubEndDate": now.strftime("%Y-%m-%dT%H:%M:%S.000"),
         "resultsPerPage": min(limit, 50),
         "cvssV3Severity": "CRITICAL"
     }
@@ -83,7 +83,6 @@ def fetch_nvd_cves(limit: int = 20) -> list:
                 if not cve_id:
                     continue
 
-                # 提取英文描述
                 descriptions = cve_obj.get("descriptions", [])
                 desc_text = ""
                 for d in descriptions:
@@ -91,9 +90,7 @@ def fetch_nvd_cves(limit: int = 20) -> list:
                         desc_text = d.get("value", "")
                         break
 
-                # 提取 CVSS v3.1
                 metrics = cve_obj.get("metrics", {})
-                cvss_data = None
                 severity = "UNKNOWN"
                 cvss_score = None
                 
@@ -132,9 +129,9 @@ def fetch_nvd_cves(limit: int = 20) -> list:
 
 def main():
     parser = argparse.ArgumentParser(description="NVD Metadata Sync")
-    parser.add_argument("--mock", action="store_true", help="强制输出模拟测试数据")
-    parser.add_argument("--limit", type=int, default=15, help="最多抓取条数")
-    parser.add_argument("--categories", type=str, default="", help="过滤分类")
+    parser.add_argument("--mock", action="store_true", help="output mock test dataset")
+    parser.add_argument("--limit", type=int, default=15, help="maximum items to fetch")
+    parser.add_argument("--categories", type=str, default="", help="filter categories")
     args = parser.parse_args()
 
     if args.mock:

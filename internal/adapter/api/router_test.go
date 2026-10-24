@@ -13,7 +13,6 @@ import (
 	"raven/internal/core/service"
 )
 
-// mockRepo 模拟持久层接口用于 API 测试
 type mockRepo struct {
 	vulns []*domain.Vulnerability
 }

@@ -8,13 +8,11 @@ import (
 	"raven/internal/pkg/logger"
 )
 
-// WatcherService 定时守护巡检服务
 type WatcherService struct {
 	collector *CollectorService
 	notifier  port.NotifierPort
 }
 
-// NewWatcherService 创建守护巡检服务
 func NewWatcherService(collector *CollectorService, notifier port.NotifierPort) *WatcherService {
 	return &WatcherService{
 		collector: collector,
@@ -22,14 +20,12 @@ func NewWatcherService(collector *CollectorService, notifier port.NotifierPort) 
 	}
 }
 
-// Start 启动定时轮询监听循环
 func (w *WatcherService) Start(ctx context.Context, interval time.Duration, categories []string) error {
 	logger.L().Info("starting threat watcher daemon",
 		"interval", interval.String(),
 		"categories", categories,
 	)
 
-	// 启动时立即执行一次巡检
 	w.runOnce(ctx, categories)
 
 	ticker := time.NewTicker(interval)

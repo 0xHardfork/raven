@@ -29,12 +29,11 @@ var (
 	serverDebug bool
 )
 
-// serverCmd 启动 Web API 服务命令
 var serverCmd = &cobra.Command{
 	Use:   "server",
-	Short: "启动 Raven RESTful Web API HTTP 服务",
-	Long: `启动 Raven 标准 RESTful Web API 服务，支持外部系统通过 HTTP 检索威胁情报、
-查询分类大盘以及远程触发采集调度任务。`,
+	Short: "Start Raven RESTful Web API HTTP server",
+	Long: `Start Raven standard RESTful Web API service, exposing endpoints
+for threat queries, metrics dashboard, and asynchronous collection triggers.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var repo port.RepositoryPort
 		if !dryRun {
@@ -57,7 +56,6 @@ var serverCmd = &cobra.Command{
 			}
 		}
 
-		// 初始化依赖组件
 		runner := python.NewRunner(cfg.Python)
 		notifierMgr := notifier.NewManager(cfg.Notifier)
 		collectorSvc := service.NewCollectorService(runner, repo, notifierMgr)
@@ -66,7 +64,6 @@ var serverCmd = &cobra.Command{
 			threatSvc = service.NewThreatQueryService(repo)
 		}
 
-		// 构建 Gin 路由
 		router := api.SetupRouter(api.RouterConfig{
 			ThreatService:    threatSvc,
 			CollectorService: collectorSvc,
@@ -82,10 +79,8 @@ var serverCmd = &cobra.Command{
 			IdleTimeout:  60 * time.Second,
 		}
 
-		// 打印终端横幅
 		printServerBanner(addr, dryRun || repo == nil)
 
-		// 后台启动 HTTP 监听
 		go func() {
 			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				logger.L().Error("http server listen failed", "error", err)
@@ -93,7 +88,6 @@ var serverCmd = &cobra.Command{
 			}
 		}()
 
-		// 捕获系统退出信号实现优雅停机
 		quit := make(chan os.Signal, 1)
 		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 		<-quit
@@ -143,8 +137,8 @@ func printServerBanner(addr string, isMock bool) {
 }
 
 func init() {
-	serverCmd.Flags().IntVarP(&serverPort, "port", "p", 8080, "HTTP 服务监听端口")
-	serverCmd.Flags().StringVar(&serverHost, "host", "0.0.0.0", "HTTP 服务监听地址")
-	serverCmd.Flags().BoolVar(&serverDebug, "debug", false, "启用 Gin 调试模式")
+	serverCmd.Flags().IntVarP(&serverPort, "port", "p", 8080, "HTTP server listening port")
+	serverCmd.Flags().StringVar(&serverHost, "host", "0.0.0.0", "HTTP server listening address")
+	serverCmd.Flags().BoolVar(&serverDebug, "debug", false, "enable Gin debug mode")
 	RootCmd.AddCommand(serverCmd)
 }

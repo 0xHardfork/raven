@@ -11,29 +11,25 @@ import (
 	"raven/internal/pkg/logger"
 )
 
-// TriggerRequest 触发采集请求载荷
 type TriggerRequest struct {
 	Source     string   `json:"source"`
 	Categories []string `json:"categories"`
 }
 
-// JobStatus 采集任务状态
 type JobStatus struct {
-	Status      string                  `json:"status"` // idle, running, completed, failed
+	Status      string                  `json:"status"`
 	StartedAt   *time.Time              `json:"started_at,omitempty"`
 	FinishedAt  *time.Time              `json:"finished_at,omitempty"`
 	LastSummary *service.CollectSummary `json:"last_summary,omitempty"`
 	LastError   string                  `json:"last_error,omitempty"`
 }
 
-// CollectorHandler 采集调度 API 处理器
 type CollectorHandler struct {
 	collectorService *service.CollectorService
 	mu               sync.RWMutex
 	jobStatus        JobStatus
 }
 
-// NewCollectorHandler 创建 CollectorHandler
 func NewCollectorHandler(collectorService *service.CollectorService) *CollectorHandler {
 	return &CollectorHandler{
 		collectorService: collectorService,
@@ -43,8 +39,6 @@ func NewCollectorHandler(collectorService *service.CollectorService) *CollectorH
 	}
 }
 
-// Trigger 异步触发采集任务
-// POST /api/v1/collect/trigger
 func (h *CollectorHandler) Trigger(c *gin.Context) {
 	var req TriggerRequest
 	if err := c.ShouldBindJSON(&req); err != nil && c.Request.ContentLength > 0 {
@@ -73,7 +67,6 @@ func (h *CollectorHandler) Trigger(c *gin.Context) {
 	}
 	h.mu.Unlock()
 
-	// 异步执行采集
 	go func(src string, cats []string) {
 		bgCtx := context.Background()
 		var summary *service.CollectSummary
@@ -124,8 +117,6 @@ func (h *CollectorHandler) Trigger(c *gin.Context) {
 	})
 }
 
-// Status 查询后台采集任务当前状态与最近一次统计
-// GET /api/v1/collect/status
 func (h *CollectorHandler) Status(c *gin.Context) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

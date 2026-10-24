@@ -47,7 +47,6 @@ func TestRepositoryUpsertAndMerge(t *testing.T) {
 	repo := NewRepository(db)
 
 	cve := "CVE-2099-9999"
-	// 首次插入来自 GitHub 的情报
 	v1 := &domain.Vulnerability{
 		CveID:       cve,
 		Title:       "Test Spring RCE",
@@ -62,7 +61,6 @@ func TestRepositoryUpsertAndMerge(t *testing.T) {
 		t.Fatalf("first upsert failed: %v", err)
 	}
 
-	// 第二次插入来自 CISA KEV 的情报（同一 CVE，更新 severity、分类并集、增加 PoC、在野利用）
 	v2 := &domain.Vulnerability{
 		CveID:       cve,
 		Title:       "Test Spring RCE Exploit in Wild",
@@ -77,7 +75,6 @@ func TestRepositoryUpsertAndMerge(t *testing.T) {
 		t.Fatalf("second upsert failed: %v", err)
 	}
 
-	// 查询验证合并结果
 	fetched, err := repo.GetByCVE(ctx, cve)
 	if err != nil {
 		t.Fatalf("get by cve failed: %v", err)
@@ -94,11 +91,9 @@ func TestRepositoryUpsertAndMerge(t *testing.T) {
 		t.Errorf("expected severity=CRITICAL, got %s", fetched.Severity)
 	}
 
-	// 验证 PoC 去重后为 2 个
 	if len(fetched.PoCs) != 2 {
 		t.Errorf("expected 2 PoCs, got %d", len(fetched.PoCs))
 	}
 
-	// 清理测试数据
 	_, _ = db.ExecContext(ctx, "DELETE FROM vulnerabilities WHERE cve_id = $1;", cve)
 }

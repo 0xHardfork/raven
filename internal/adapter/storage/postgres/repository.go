@@ -13,24 +13,20 @@ import (
 	"raven/internal/core/port"
 )
 
-// Repository PostgreSQL 存储库实现
 type Repository struct {
 	db *sql.DB
 }
 
 var _ port.RepositoryPort = (*Repository)(nil)
 
-// NewRepository 创建持久化存储库
 func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
-// Close 关闭连接池
 func (r *Repository) Close() error {
 	return r.db.Close()
 }
 
-// UpsertVuln 幂等合并插入/更新单条漏洞
 func (r *Repository) UpsertVuln(ctx context.Context, vuln *domain.Vulnerability) error {
 	if r == nil || r.db == nil {
 		return nil
@@ -47,11 +43,6 @@ func (r *Repository) UpsertVuln(ctx context.Context, vuln *domain.Vulnerability)
 		rawDataJSON = []byte("{}")
 	}
 
-	// 核心 Upsert & Merge SQL：
-	// 1. categories 取并集去重
-	// 2. pocs 按 url 唯一键去重追加
-	// 3. sources 取并集去重
-	// 4. is_exploited 只要有任一源确认即为 true
 	query := `
 	INSERT INTO vulnerabilities (
 		cve_id, title, description, severity, cvss_score,
@@ -112,7 +103,6 @@ func (r *Repository) UpsertVuln(ctx context.Context, vuln *domain.Vulnerability)
 	return nil
 }
 
-// BatchUpsert 批量幂等更新漏洞列表
 func (r *Repository) BatchUpsert(ctx context.Context, vulns []*domain.Vulnerability) (int, int, error) {
 	if r == nil || r.db == nil || len(vulns) == 0 {
 		return 0, 0, nil
@@ -131,7 +121,6 @@ func (r *Repository) BatchUpsert(ctx context.Context, vulns []*domain.Vulnerabil
 		if err := r.UpsertVuln(ctx, v); err != nil {
 			return inserted, updated, err
 		}
-		// 根据 created_at 和 updated_at 是否在同一毫秒判断是否为全新插入
 		if v.UpdatedAt.Sub(v.CreatedAt) < 50*time.Millisecond {
 			inserted++
 		} else {
@@ -146,7 +135,6 @@ func (r *Repository) BatchUpsert(ctx context.Context, vulns []*domain.Vulnerabil
 	return inserted, updated, nil
 }
 
-// GetByCVE 按 CVE 编号精准查询
 func (r *Repository) GetByCVE(ctx context.Context, cveID string) (*domain.Vulnerability, error) {
 	cveID = strings.ToUpper(strings.TrimSpace(cveID))
 	query := `
@@ -184,7 +172,6 @@ func (r *Repository) GetByCVE(ctx context.Context, cveID string) (*domain.Vulner
 	return v, nil
 }
 
-// Query 根据多维过滤条件分页查询
 func (r *Repository) Query(ctx context.Context, filter domain.ThreatFilter) (*domain.PaginationResult[*domain.Vulnerability], error) {
 	var whereClauses []string
 	var args []any
@@ -234,14 +221,12 @@ func (r *Repository) Query(ctx context.Context, filter domain.ThreatFilter) (*do
 		whereSQL = "WHERE " + strings.Join(whereClauses, " AND ")
 	}
 
-	// 1. 查询总条数
 	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM vulnerabilities %s", whereSQL)
 	var total int64
 	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, fmt.Errorf("query total count failed: %w", err)
 	}
 
-	// 2. 分页处理
 	page := filter.Page
 	if page <= 0 {
 		page = 1
@@ -300,7 +285,6 @@ func (r *Repository) Query(ctx context.Context, filter domain.ThreatFilter) (*do
 	}, nil
 }
 
-// ListCategories 获取所有标签及数量
 func (r *Repository) ListCategories(ctx context.Context) ([]domain.CategoryCount, error) {
 	query := `
 	SELECT unnest(categories) AS category, COUNT(*) AS count
@@ -325,7 +309,6 @@ func (r *Repository) ListCategories(ctx context.Context) ([]domain.CategoryCount
 	return list, nil
 }
 
-// GetStats 获取总体威胁统计大盘
 func (r *Repository) GetStats(ctx context.Context) (*domain.SystemStats, error) {
 	stats := &domain.SystemStats{}
 

@@ -17,14 +17,12 @@ import (
 	"raven/internal/pkg/logger"
 )
 
-// Runner Python 子进程管道调度执行器
 type Runner struct {
 	cfg config.PythonConfig
 }
 
 var _ port.ScriptRunnerPort = (*Runner)(nil)
 
-// NewRunner 创建 Python 执行器实例
 func NewRunner(cfg config.PythonConfig) *Runner {
 	if cfg.BinaryPath == "" {
 		cfg.BinaryPath = "python3"
@@ -38,7 +36,6 @@ func NewRunner(cfg config.PythonConfig) *Runner {
 	return &Runner{cfg: cfg}
 }
 
-// RunScript 动态调用 Python 子进程，通过 stdout JSON 管道获取采集结果
 func (r *Runner) RunScript(ctx context.Context, scriptPath string, args ...string) ([]*domain.Vulnerability, error) {
 	timeout := time.Duration(r.cfg.TimeoutSec) * time.Second
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -84,7 +81,6 @@ func (r *Runner) RunScript(ctx context.Context, scriptPath string, args ...strin
 		return []*domain.Vulnerability{}, nil
 	}
 
-	// 反序列化输出的 JSON 数组
 	var rawItems []struct {
 		CveID       string         `json:"cve_id"`
 		Title       string         `json:"title"`
@@ -148,7 +144,6 @@ func (r *Runner) RunScript(ctx context.Context, scriptPath string, args ...strin
 	return result, nil
 }
 
-// ListScripts 扫描可用采集脚本
 func (r *Runner) ListScripts(ctx context.Context) ([]string, error) {
 	dir := r.cfg.ScriptsDir
 	if _, err := os.Stat(dir); os.IsNotExist(err) {

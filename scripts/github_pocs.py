@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-GitHub PoC 实时监控与采集脚本 (github_pocs.py)
-遵守 Raven 脚本契约：结果以 JSON Array 格式写入 stdout，日志输出至 stderr。
-"""
 
 import sys
 import os
@@ -92,11 +88,16 @@ def log(msg: str):
     sys.stderr.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [github_pocs] {msg}\n")
     sys.stderr.flush()
 
-def fetch_from_github(limit: int = 20) -> list:
+def fetch_from_github(limit: int = 30, target_category: str = "") -> list:
     import urllib.request
     import urllib.error
+    import urllib.parse
 
-    query = "CVE-2024 OR CVE-2025 in:name,description fork:false"
+    if target_category:
+        query = f"{target_category} CVE in:name,description fork:false"
+    else:
+        query = "CVE in:name,description fork:false"
+
     url = f"https://api.github.com/search/repositories?q={urllib.parse.quote(query)}&sort=updated&order=desc&per_page={limit}"
     
     headers = {
@@ -119,41 +120,45 @@ def fetch_from_github(limit: int = 20) -> list:
             vulns = []
             for item in items:
                 text = f"{item.get('name', '')} {item.get('description', '')}"
-                match = CVE_REGEX.search(text)
-                if not match:
+                found_cves = sorted(list(set(c.upper() for c in CVE_REGEX.findall(text))))
+                if not found_cves:
                     continue
-                cve_id = match.group(1).upper()
                 
-                # 自声明分类：基于仓库主语言
                 lang = (item.get("language") or "").lower()
-                categories = LANGUAGE_CATEGORY_MAP.get(lang, [lang] if lang else ["security"])
+                categories = list(LANGUAGE_CATEGORY_MAP.get(lang, [lang] if lang else ["security"]))
                 if "poc" not in categories:
                     categories.append("poc")
+
+                text_lower = text.lower()
+                for keyword in ["php", "java", "spring", "golang", "python", "rust", "wordpress", "apache", "nginx", "rce", "ssrf"]:
+                    if keyword in text_lower and keyword not in categories:
+                        categories.append(keyword)
                 
-                vulns.append({
-                    "cve_id": cve_id,
-                    "title": item.get("name", cve_id),
-                    "description": item.get("description") or f"PoC repository for {cve_id}",
-                    "severity": "HIGH",
-                    "cvss_score": None,
-                    "categories": categories,
-                    "is_exploited": False,
-                    "pocs": [
-                        {
-                            "url": item.get("html_url"),
-                            "author": item.get("owner", {}).get("login", ""),
-                            "description": item.get("description") or "",
-                            "published_at": item.get("created_at")
+                for cve_id in found_cves:
+                    vulns.append({
+                        "cve_id": cve_id,
+                        "title": item.get("name", cve_id),
+                        "description": item.get("description") or f"PoC repository for {cve_id}",
+                        "severity": "HIGH",
+                        "cvss_score": None,
+                        "categories": categories,
+                        "is_exploited": False,
+                        "pocs": [
+                            {
+                                "url": item.get("html_url"),
+                                "author": item.get("owner", {}).get("login", ""),
+                                "description": item.get("description") or "",
+                                "published_at": item.get("created_at")
+                            }
+                        ],
+                        "source": "github_pocs",
+                        "published_at": item.get("created_at"),
+                        "raw_data": {
+                            "stars": item.get("stargazers_count", 0),
+                            "forks": item.get("forks_count", 0),
+                            "language": item.get("language")
                         }
-                    ],
-                    "source": "github_pocs",
-                    "published_at": item.get("created_at"),
-                    "raw_data": {
-                        "stars": item.get("stargazers_count", 0),
-                        "forks": item.get("forks_count", 0),
-                        "language": item.get("language")
-                    }
-                })
+                    })
             return vulns
     except Exception as e:
         log(f"GitHub API query failed or rate-limited: {e}. Falling back to internal curated feed.")
@@ -161,18 +166,17 @@ def fetch_from_github(limit: int = 20) -> list:
 
 def main():
     parser = argparse.ArgumentParser(description="Raven GitHub PoC Collector")
-    parser.add_argument("--mock", action="store_true", help="强制输出模拟测试数据")
-    parser.add_argument("--limit", type=int, default=20, help="单次抓取最大条数")
-    parser.add_argument("--categories", type=str, default="", help="过滤技术生态分类")
+    parser.add_argument("--mock", action="store_true", help="output mock test dataset")
+    parser.add_argument("--limit", type=int, default=30, help="maximum items to fetch")
+    parser.add_argument("--categories", type=str, default="", help="filter ecosystem categories")
     args = parser.parse_args()
 
     if args.mock:
-        log("running in mock mode, returning curated test threat dataset")
+        log("running in mock mode, returning curated test dataset")
         results = MOCK_DATA
     else:
-        results = fetch_from_github(limit=args.limit)
+        results = fetch_from_github(limit=args.limit, target_category=args.categories)
 
-    # 规范输出：必须且仅输出 JSON 字符串到 stdout
     sys.stdout.write(json.dumps(results, indent=2, ensure_ascii=False))
     sys.stdout.flush()
 

@@ -10,14 +10,12 @@ import (
 	"raven/internal/pkg/logger"
 )
 
-// RouterConfig 路由配置项
 type RouterConfig struct {
 	ThreatService    *service.ThreatQueryService
 	CollectorService *service.CollectorService
 	Debug            bool
 }
 
-// SetupRouter 初始化 Gin HTTP 路由引擎与中间件
 func SetupRouter(cfg RouterConfig) *gin.Engine {
 	if !cfg.Debug {
 		gin.SetMode(gin.ReleaseMode)
@@ -27,10 +25,8 @@ func SetupRouter(cfg RouterConfig) *gin.Engine {
 
 	r := gin.New()
 
-	// 1. 中间件：异常恢复
 	r.Use(gin.Recovery())
 
-	// 2. 中间件：结构化日志审计
 	r.Use(func(c *gin.Context) {
 		start := time.Now()
 		path := c.Request.URL.Path
@@ -56,7 +52,6 @@ func SetupRouter(cfg RouterConfig) *gin.Engine {
 		)
 	})
 
-	// 3. 中间件：CORS 跨域支持
 	r.Use(func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
@@ -71,7 +66,6 @@ func SetupRouter(cfg RouterConfig) *gin.Engine {
 		c.Next()
 	})
 
-	// 4. 基础探针
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"status": "ok",
@@ -80,15 +74,12 @@ func SetupRouter(cfg RouterConfig) *gin.Engine {
 		})
 	})
 
-	// 5. 业务 API 分组 /api/v1
 	v1 := r.Group("/api/v1")
 	{
-		// 基础探针
 		v1.GET("/health", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"status": "ok"})
 		})
 
-		// 威胁情报接口
 		if cfg.ThreatService != nil {
 			threatH := handler.NewThreatHandler(cfg.ThreatService)
 			threats := v1.Group("/threats")
@@ -100,7 +91,6 @@ func SetupRouter(cfg RouterConfig) *gin.Engine {
 			v1.GET("/stats", threatH.GetStats)
 		}
 
-		// 采集任务触发与状态接口
 		if cfg.CollectorService != nil {
 			collectH := handler.NewCollectorHandler(cfg.CollectorService)
 			collect := v1.Group("/collect")

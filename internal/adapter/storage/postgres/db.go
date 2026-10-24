@@ -11,14 +11,12 @@ import (
 	"raven/internal/pkg/logger"
 )
 
-// Connect 初始化 PostgreSQL 数据库连接池
 func Connect(ctx context.Context, cfg config.DatabaseConfig) (*sql.DB, error) {
 	db, err := sql.Open("postgres", cfg.DSN())
 	if err != nil {
 		return nil, fmt.Errorf("open postgres connection failed: %w", err)
 	}
 
-	// 设置连接池参数
 	maxOpen := cfg.MaxOpenConns
 	if maxOpen <= 0 {
 		maxOpen = 25
@@ -32,7 +30,6 @@ func Connect(ctx context.Context, cfg config.DatabaseConfig) (*sql.DB, error) {
 	db.SetMaxIdleConns(maxIdle)
 	db.SetConnMaxLifetime(30 * time.Minute)
 
-	// 验证连通性
 	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -47,7 +44,6 @@ func Connect(ctx context.Context, cfg config.DatabaseConfig) (*sql.DB, error) {
 		"dbname", cfg.DBName,
 	)
 
-	// 若开启了 auto_migrate，则执行 Flyway 风格自检与迁移
 	if cfg.AutoMigrate {
 		migrator := NewMigrator(db)
 		count, err := migrator.Up(ctx)

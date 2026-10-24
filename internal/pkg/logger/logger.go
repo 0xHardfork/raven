@@ -9,7 +9,6 @@ import (
 var defaultLogger *slog.Logger
 
 func init() {
-	// 默认初始化 Text 结构化 Logger
 	opts := &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}
@@ -18,7 +17,6 @@ func init() {
 	slog.SetDefault(defaultLogger)
 }
 
-// Init 根据环境初始化全局 Logger
 func Init(levelStr string, jsonFormat bool) *slog.Logger {
 	var level slog.Level
 	switch strings.ToUpper(levelStr) {
@@ -48,7 +46,6 @@ func Init(levelStr string, jsonFormat bool) *slog.Logger {
 	return defaultLogger
 }
 
-// L 返回默认全局 logger 实例
 func L() *slog.Logger {
 	return defaultLogger
 }

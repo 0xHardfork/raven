@@ -8,7 +8,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config 定义 Raven 全局配置结构体
 type Config struct {
 	Database DatabaseConfig `yaml:"database"`
 	Server   ServerConfig   `yaml:"server"`
@@ -17,7 +16,6 @@ type Config struct {
 	Python   PythonConfig   `yaml:"python"`
 }
 
-// DatabaseConfig 数据库连接配置
 type DatabaseConfig struct {
 	Host         string `yaml:"host"`
 	Port         int    `yaml:"port"`
@@ -30,26 +28,22 @@ type DatabaseConfig struct {
 	AutoMigrate  bool   `yaml:"auto_migrate"`
 }
 
-// DSN 返回 PostgreSQL 连接串
 func (d *DatabaseConfig) DSN() string {
 	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
 		d.Host, d.Port, d.User, d.Password, d.DBName, d.SSLMode)
 }
 
-// ServerConfig Web API 服务配置
 type ServerConfig struct {
 	Host string `yaml:"host"`
 	Port int    `yaml:"port"`
 }
 
-// WatcherConfig 定时巡检守护配置
 type WatcherConfig struct {
 	Interval   string   `yaml:"interval"`
 	Categories []string `yaml:"categories"`
 	Sources    []string `yaml:"sources"`
 }
 
-// ParseInterval 解析巡检周期
 func (w *WatcherConfig) ParseInterval() time.Duration {
 	d, err := time.ParseDuration(w.Interval)
 	if err != nil || d < time.Minute {
@@ -58,10 +52,9 @@ func (w *WatcherConfig) ParseInterval() time.Duration {
 	return d
 }
 
-// NotifierConfig 告警与通知推送配置
 type NotifierConfig struct {
 	Enabled               bool           `yaml:"enabled"`
-	DryRun                bool           `yaml:"dry_run"` // 本地调试无需真实 Webhook，打印富文本到终端
+	DryRun                bool           `yaml:"dry_run"`
 	MinSeverity           string         `yaml:"min_severity"`
 	OnlyWithPoC           bool           `yaml:"only_with_poc"`
 	AlwaysNotifyExploited bool           `yaml:"always_notify_exploited"`
@@ -69,12 +62,10 @@ type NotifierConfig struct {
 	Channels              ChannelsConfig `yaml:"channels"`
 }
 
-// ChannelsConfig 各推送通道配置
 type ChannelsConfig struct {
 	Slack SlackConfig `yaml:"slack"`
 }
 
-// SlackConfig Slack Bot 与 Webhook 配置
 type SlackConfig struct {
 	Enabled    bool   `yaml:"enabled"`
 	WebhookURL string `yaml:"webhook_url"`
@@ -82,14 +73,12 @@ type SlackConfig struct {
 	BotToken   string `yaml:"bot_token"`
 }
 
-// PythonConfig Python 采集器子进程配置
 type PythonConfig struct {
-	BinaryPath string `yaml:"binary_path"` // 默认 "python3"
-	ScriptsDir string `yaml:"scripts_dir"` // 默认 "scripts"
-	TimeoutSec int    `yaml:"timeout_sec"` // 默认 60 秒
+	BinaryPath string `yaml:"binary_path"`
+	ScriptsDir string `yaml:"scripts_dir"`
+	TimeoutSec int    `yaml:"timeout_sec"`
 }
 
-// DefaultConfig 提供开箱即用的默认配置
 func DefaultConfig() *Config {
 	return &Config{
 		Database: DatabaseConfig{
@@ -114,7 +103,7 @@ func DefaultConfig() *Config {
 		},
 		Notifier: NotifierConfig{
 			Enabled:               false,
-			DryRun:                true, // 默认开启 dry-run 保护本地测试
+			DryRun:                true,
 			MinSeverity:           "HIGH",
 			OnlyWithPoC:           false,
 			AlwaysNotifyExploited: true,
@@ -136,11 +125,9 @@ func DefaultConfig() *Config {
 	}
 }
 
-// Load 读取并解析配置文件；若文件不存在则返回默认配置
 func Load(path string) (*Config, error) {
 	cfg := DefaultConfig()
 
-	// 若未指定路径，探测默认位置
 	if path == "" {
 		candidates := []string{
 			"configs/config.yaml",
@@ -155,7 +142,6 @@ func Load(path string) (*Config, error) {
 		}
 	}
 
-	// 没有找到配置文件，使用安全默认配置
 	if path == "" {
 		return cfg, nil
 	}
