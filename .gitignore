@@ -18,6 +18,9 @@ secrets/
 .secrets/
 credentials/
 .credentials/
+SERVER_OPS.md
+*OPS*.md
+SERVER_*.md
 
 # Binaries & build artifacts
 /bin/

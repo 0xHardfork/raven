@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export COPYFILE_DISABLE=1
 
 VERSION="${1:-v1.0.0}"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -34,6 +35,7 @@ for target in "${TARGETS[@]}"; do
   cp "${PROJECT_ROOT}/scripts/requirements.txt" "${STAGE_DIR}/scripts/"
   cp -r "${PROJECT_ROOT}/migrations/"*.sql "${STAGE_DIR}/migrations/"
   cp "${PROJECT_ROOT}/configs/config.yaml.example" "${STAGE_DIR}/configs/config.yaml"
+  cp "${PROJECT_ROOT}/Dockerfile" "${STAGE_DIR}/"
   cp "${PROJECT_ROOT}/README.md" "${STAGE_DIR}/"
 
   chmod +x "${STAGE_DIR}/bin/raven" "${STAGE_DIR}/scripts/"*.py

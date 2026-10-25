@@ -248,7 +248,7 @@ func (r *Runner) ListScripts(ctx context.Context) ([]string, error) {
 			continue
 		}
 		name := e.Name()
-		if strings.HasSuffix(name, ".py") && !strings.HasPrefix(name, "_") {
+		if strings.HasSuffix(name, ".py") && !strings.HasPrefix(name, "_") && !strings.HasPrefix(name, ".") {
 			scripts = append(scripts, filepath.Join(dir, name))
 		}
 	}
